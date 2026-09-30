@@ -13,10 +13,8 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
-SILENCE_START_RE = re.compile(r"silence_start:\s*(-?[\d.]+)")
-SILENCE_END_RE = re.compile(r"silence_end:\s*(-?[\d.]+)")
 RMS_RE = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?inf|nan|-?[\d.]+)")
 
 FLOOR_DB = -120.0
@@ -99,6 +97,8 @@ class MediaInfo:
     fps: Optional[float]
     has_video: bool
     has_audio: bool
+    creation_time: Optional[str] = None
+    timecode: Optional[str] = None
 
 
 def _parse_rate(rate: Optional[str]) -> Optional[float]:
@@ -126,52 +126,31 @@ def parse_probe(path: str, data: dict) -> MediaInfo:
     if video:
         fps = _parse_rate(video[0].get("avg_frame_rate")) or _parse_rate(
             video[0].get("r_frame_rate"))
-    duration = float(data.get("format", {}).get("duration") or 0.0)
+    fmt = data.get("format", {})
+    duration = float(fmt.get("duration") or 0.0)
     if not duration:
         for s in streams:
             if s.get("duration"):
                 duration = max(duration, float(s["duration"]))
-    return MediaInfo(path, duration, fps, bool(video), bool(audio))
+    creation = (fmt.get("tags") or {}).get("creation_time")
+    timecode = (fmt.get("tags") or {}).get("timecode")
+    for s in streams:
+        tags = s.get("tags") or {}
+        creation = creation or tags.get("creation_time")
+        timecode = timecode or tags.get("timecode")
+    return MediaInfo(path, duration, fps, bool(video), bool(audio), creation, timecode)
 
 
 def probe(path: str) -> MediaInfo:
     proc = _run([
         find_binary("ffprobe"), "-v", "error",
         "-show_entries",
-        "format=duration:stream=codec_type,avg_frame_rate,r_frame_rate,duration"
-        ":stream_disposition=attached_pic",
+        "format=duration:format_tags=creation_time,timecode"
+        ":stream=codec_type,avg_frame_rate,r_frame_rate,duration"
+        ":stream_tags=creation_time,timecode:stream_disposition=attached_pic",
         "-of", "json", path,
     ])
     return parse_probe(path, json.loads(proc.stdout or "{}"))
-
-
-def parse_silencedetect(log: str, duration: float) -> List[Tuple[float, float]]:
-    """Turn ffmpeg silencedetect log output into (start, end) pairs."""
-    silences = []
-    start = None
-    for line in log.splitlines():
-        m = SILENCE_START_RE.search(line)
-        if m:
-            start = max(0.0, float(m.group(1)))
-            continue
-        m = SILENCE_END_RE.search(line)
-        if m and start is not None:
-            silences.append((start, float(m.group(1))))
-            start = None
-    if start is not None:  # silence runs to the end of the file
-        silences.append((start, duration))
-    return silences
-
-
-def detect_silence(path: str, threshold_db: float, min_silence: float,
-                   duration: float) -> List[Tuple[float, float]]:
-    proc = _run([
-        find_binary("ffmpeg"), "-hide_banner", "-nostats", "-i", path,
-        "-vn", "-sn", "-dn",
-        "-af", f"silencedetect=noise={threshold_db}dB:d={min_silence}",
-        "-f", "null", "-",
-    ])
-    return parse_silencedetect(proc.stderr, duration)
 
 
 def parse_rms_log(log: str) -> List[float]:
@@ -185,12 +164,14 @@ def parse_rms_log(log: str) -> List[float]:
     return values
 
 
-def loudness_envelope(path: str, window: float,
-                      limit: Optional[float] = None) -> List[float]:
+def loudness_envelope(path: str, window: float, limit: Optional[float] = None,
+                      start: Optional[float] = None) -> List[float]:
     """RMS level in dB for every `window` seconds of the file's audio."""
     rate = 16000
     samples = max(1, int(round(rate * window)))
     args = [find_binary("ffmpeg"), "-hide_banner", "-nostats"]
+    if start:
+        args += ["-ss", f"{start:.3f}"]
     if limit:
         args += ["-t", f"{limit:.3f}"]
     args += [

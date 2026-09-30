@@ -13,7 +13,7 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence
 
 from .config import BrollSettings
 
@@ -181,6 +181,3 @@ def cues_to_output(cues: Sequence[Cue], time_map) -> List[Cue]:
 def load_clips(paths: Sequence[str], durations: Sequence[float]) -> List[BrollClip]:
     return [BrollClip(p, d, phrases_from_filename(p)) for p, d in zip(paths, durations)]
 
-
-def summarize(placements: Sequence[BrollPlacement]) -> List[Tuple[float, str, str]]:
-    return [(p.start, os.path.basename(p.clip.path), p.reason) for p in placements]

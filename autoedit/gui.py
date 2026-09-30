@@ -6,16 +6,16 @@ import os
 import queue
 import threading
 import traceback
-from typing import Optional
+from typing import List, Optional
 
 from .config import JobSettings
 from .pipeline import analyze
 from .planner import describe
 
 SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".autoedit_resolve.json")
-MODES = {"Theo nhịp (1 người, nhiều góc)": "rhythm",
+MODES = {"Theo nhịp (sự kiện, 1 người nhiều góc)": "rhythm",
          "Theo người nói (podcast, phỏng vấn)": "speaker",
-         "Tắt": "off"}
+         "Tắt - chỉ xếp chồng các cam để tự dựng": "off"}
 
 
 def _load_last() -> JobSettings:
@@ -36,32 +36,49 @@ def main(resolve_hint: Optional[dict] = None) -> None:
     job = _load_last()
     root = tk.Tk()
     root.title("AutoEdit cho DaVinci Resolve")
-    root.geometry("760x720")
+    root.geometry("820x760")
     pad = {"padx": 6, "pady": 3}
 
     # --- Inputs -------------------------------------------------------------
     files = ttk.LabelFrame(root, text="1. Nguồn")
     files.pack(fill="x", **pad)
-    ttk.Label(files, text="Camera (camera 1 = góc chính):").grid(row=0, column=0, sticky="w")
-    cam_list = tk.Listbox(files, height=4)
-    cam_list.grid(row=1, column=0, columnspan=3, sticky="ew", padx=4)
     files.columnconfigure(1, weight=1)
-    for c in job.cameras:
-        if os.path.isfile(c):
-            cam_list.insert("end", c)
+    ttk.Label(files, text="Mỗi camera là một thư mục chứa các clip của máy đó. "
+                          "Cam 1 là chuẩn để đồng bộ.").grid(
+        row=0, column=0, columnspan=4, sticky="w")
+    cam_frame = ttk.Frame(files)
+    cam_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
+    cam_frame.columnconfigure(1, weight=1)
+    cam_vars: List["tk.StringVar"] = []
 
-    def add_cams():
-        for p in filedialog.askopenfilenames(title="Chọn file camera"):
-            cam_list.insert("end", p)
+    def redraw_cams():
+        for child in cam_frame.winfo_children():
+            child.destroy()
+        for i, var in enumerate(cam_vars):
+            ttk.Label(cam_frame, text=f"Cam {i + 1}:", width=7).grid(row=i, column=0, sticky="w")
+            ttk.Entry(cam_frame, textvariable=var).grid(row=i, column=1, sticky="ew", padx=4)
 
-    def remove_cam():
-        for i in reversed(cam_list.curselection()):
-            cam_list.delete(i)
+            def browse(v=var, n=i + 1):
+                p = filedialog.askdirectory(title=f"Chọn thư mục Cam {n}")
+                if p:
+                    v.set(p)
+            ttk.Button(cam_frame, text="Chọn thư mục...", command=browse).grid(row=i, column=2)
 
-    btns = ttk.Frame(files)
-    btns.grid(row=2, column=0, columnspan=3, sticky="w")
-    ttk.Button(btns, text="Thêm camera...", command=add_cams).pack(side="left", padx=2)
-    ttk.Button(btns, text="Xoá", command=remove_cam).pack(side="left", padx=2)
+            def remove(idx=i):
+                if len(cam_vars) > 1:
+                    cam_vars.pop(idx)
+                    redraw_cams()
+            ttk.Button(cam_frame, text="✕", width=3, command=remove).grid(row=i, column=3, padx=2)
+        ttk.Button(cam_frame, text="+ Thêm camera", command=add_cam).grid(
+            row=len(cam_vars), column=0, columnspan=2, sticky="w", pady=2)
+
+    def add_cam(value: str = ""):
+        cam_vars.append(tk.StringVar(value=value))
+        redraw_cams()
+
+    for c in job.cameras or ["", ""]:
+        cam_vars.append(tk.StringVar(value=c if os.path.exists(c) else ""))
+    redraw_cams()
 
     def path_row(row, label, value, is_dir=False, types=None):
         var = tk.StringVar(value=value or "")
@@ -76,7 +93,6 @@ def main(resolve_hint: Optional[dict] = None) -> None:
         ttk.Button(files, text="...", width=3, command=browse).grid(row=row, column=2)
         return var
 
-    audio_var = path_row(3, "Âm thanh rời (tuỳ chọn):", job.audio)
     broll_var = path_row(4, "Thư mục B-roll (tuỳ chọn):", job.broll_dir, is_dir=True)
     srt_var = path_row(5, "Phụ đề .srt (tuỳ chọn):", job.srt,
                        types=[("Subtitles", "*.srt"), ("All", "*.*")])
@@ -93,11 +109,14 @@ def main(resolve_hint: Optional[dict] = None) -> None:
 
     opts = ttk.Frame(root)
     opts.pack(fill="x", **pad)
-    sil = ttk.LabelFrame(opts, text="2. Cắt khoảng lặng")
+    sil = ttk.LabelFrame(opts, text="2. Cắt phần thừa")
     sil.pack(side="left", fill="both", expand=True, padx=3)
-    thr_var = num_row(sil, 0, "Ngưỡng im lặng (dB)", job.silence.threshold_db)
-    mins_var = num_row(sil, 1, "Lặng tối thiểu (s)", job.silence.min_silence)
-    padd_var = num_row(sil, 2, "Chừa đệm (s)", job.silence.padding)
+    sil_on = tk.BooleanVar(value=job.silence.enabled)
+    ttk.Checkbutton(sil, text="Cắt khoảng lặng", variable=sil_on).grid(
+        row=0, column=0, columnspan=2, sticky="w")
+    thr_var = num_row(sil, 1, "Ngưỡng im lặng (dB)", job.silence.threshold_db)
+    mins_var = num_row(sil, 2, "Lặng tối thiểu (s)", job.silence.min_silence)
+    padd_var = num_row(sil, 3, "Chừa đệm (s)", job.silence.padding)
 
     cam = ttk.LabelFrame(opts, text="3. Đảo góc máy")
     cam.pack(side="left", fill="both", expand=True, padx=3)
@@ -138,11 +157,11 @@ def main(resolve_hint: Optional[dict] = None) -> None:
             return float(text) if text else default
 
         j = JobSettings()
-        j.cameras = list(cam_list.get(0, "end"))
-        j.audio = audio_var.get().strip() or None
+        j.cameras = [v.get().strip() for v in cam_vars if v.get().strip()]
         j.broll_dir = broll_var.get().strip() or None
         j.srt = srt_var.get().strip() or None
         j.timeline_name = name_var.get().strip() or "AutoEdit"
+        j.silence.enabled = sil_on.get()
         j.silence.threshold_db = f(thr_var, -35.0)
         j.silence.min_silence = f(mins_var, 0.5)
         j.silence.padding = f(padd_var, 0.12)
@@ -176,7 +195,11 @@ def main(resolve_hint: Optional[dict] = None) -> None:
             messagebox.showerror("AutoEdit", "Giá trị số không hợp lệ.")
             return
         if not j.cameras:
-            messagebox.showerror("AutoEdit", "Hãy thêm ít nhất một file camera.")
+            messagebox.showerror("AutoEdit", "Hãy chọn thư mục cho ít nhất một camera.")
+            return
+        missing = [c for c in j.cameras if not os.path.exists(c)]
+        if missing:
+            messagebox.showerror("AutoEdit", "Không tìm thấy:\n" + "\n".join(missing))
             return
         try:
             j.save(SETTINGS_FILE)
@@ -187,7 +210,11 @@ def main(resolve_hint: Optional[dict] = None) -> None:
             from . import ffmpeg_tools as ff
             from .resolve_bridge import ResolveBuilder, get_resolve
             builder = ResolveBuilder(get_resolve(resolve_hint), log)
-            fps = builder.timeline_fps(ff.probe(j.cameras[0]).fps)
+            from .sources import collect_files
+            first = collect_files(j.cameras[0])
+            if not first:
+                raise ValueError(f"Cam 1: không có file video trong {j.cameras[0]}")
+            fps = builder.timeline_fps(ff.probe(first[0]).fps)
             builder_holder["b"] = builder
         except Exception as exc:
             messagebox.showerror("AutoEdit", str(exc))

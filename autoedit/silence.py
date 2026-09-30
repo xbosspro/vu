@@ -55,3 +55,44 @@ class TimeMap:
             if t <= e:
                 return out + (t - s)
         return None
+
+
+def silences_from_envelope(env_db: Sequence[float], window: float,
+                           threshold_db: float, min_silence: float) -> List[Interval]:
+    """Runs of the envelope below `threshold_db` lasting at least `min_silence`."""
+    out: List[Interval] = []
+    start = None
+    for i, v in enumerate(list(env_db) + [float("inf")]):
+        if v < threshold_db:
+            if start is None:
+                start = i
+        elif start is not None:
+            if (i - start) * window >= min_silence:
+                out.append((start * window, i * window))
+            start = None
+    return out
+
+
+def union(intervals: Sequence[Interval]) -> List[Interval]:
+    merged: List[Interval] = []
+    for s, e in sorted(intervals):
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def intersect(a: Sequence[Interval], b: Sequence[Interval],
+              min_keep: float = 0.0) -> List[Interval]:
+    out: List[Interval] = []
+    i = j = 0
+    while i < len(a) and j < len(b):
+        s, e = max(a[i][0], b[j][0]), min(a[i][1], b[j][1])
+        if e - s > max(min_keep, 1e-9):
+            out.append((s, e))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out

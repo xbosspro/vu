@@ -12,7 +12,7 @@ import os
 import sys
 from typing import Callable, Dict, Iterable, List, Optional
 
-from .planner import ClipEvent, EditPlan
+from .planner import AUDIO_ONLY, VIDEO_ONLY, ClipEvent, EditPlan
 
 Log = Callable[[str], None]
 
@@ -126,13 +126,17 @@ class ResolveBuilder:
             yield from self._walk(sub)
 
     def import_media(self, paths: Iterable[str]) -> Dict[str, object]:
-        wanted = {os.path.normcase(os.path.abspath(p)): p for p in paths}
+        key = lambda p: os.path.normcase(os.path.abspath(p))
+        wanted = {key(p): p for p in paths}
         found: Dict[str, object] = {}
-        for clip in self._walk(self.media_pool.GetRootFolder()):
-            key = os.path.normcase(os.path.abspath(clip.GetClipProperty("File Path") or "."))
-            if key in wanted and wanted[key] not in found:
-                found[wanted[key]] = clip
 
+        def collect(items) -> None:
+            for clip in items:
+                k = key(clip.GetClipProperty("File Path") or ".")
+                if k in wanted and wanted[k] not in found:
+                    found[wanted[k]] = clip
+
+        collect(self._walk(self.media_pool.GetRootFolder()))
         missing = [p for p in wanted.values() if p not in found]
         if missing:
             root = self.media_pool.GetRootFolder()
@@ -141,12 +145,12 @@ class ResolveBuilder:
             folder = folder or self.media_pool.AddSubFolder(root, "AutoEdit")
             if folder:
                 self.media_pool.SetCurrentFolder(folder)
-            for path in missing:
-                items = self.media_pool.ImportMedia([path]) or []
-                if not items:
+            self.log(f"Import {len(missing)} file vào Media Pool (thư mục AutoEdit)...")
+            collect(self.media_pool.ImportMedia(missing) or [])
+            for path in [p for p in missing if p not in found]:
+                collect(self.media_pool.ImportMedia([path]) or [])
+                if path not in found:
                     raise ResolveError(f"Resolve không import được: {path}")
-                found[path] = items[0]
-            self.log(f"Đã import {len(missing)} file vào Media Pool (thư mục AutoEdit).")
         return found
 
     def _unique_name(self, name: str) -> str:
@@ -160,7 +164,7 @@ class ResolveBuilder:
     # ---------------------------------------------------------------- build
     def _clip_info(self, event: ClipEvent, item, fps: float, start: int) -> dict:
         clip_fps = _as_float(item.GetClipProperty("FPS"), fps) or fps
-        src_start = int(round(event.source_start * clip_fps))
+        src_start = max(0, int(round(event.source_start * clip_fps)))
         src_len = max(1, int(round(event.duration * clip_fps / fps)))
         end = src_start + src_len - (1 if self.end_inclusive else 0)
         return {
@@ -182,6 +186,28 @@ class ResolveBuilder:
             self.end_inclusive = got == event.duration + 1
             timeline.DeleteClips(placed, False)
 
+    def _ensure_tracks(self, timeline, kind: str, count: int) -> None:
+        while timeline.GetTrackCount(kind) < count:
+            ok = (timeline.AddTrack(kind, "stereo") if kind == "audio"
+                  else timeline.AddTrack(kind))
+            if not ok:
+                self.log(f"Cảnh báo: không thêm được track {kind}.")
+                break
+
+    def _disable(self, timeline, events: List[ClipEvent], start: int) -> int:
+        by_track: Dict[int, Dict[int, object]] = {}
+        done = 0
+        for e in events:
+            if e.track not in by_track:
+                items = timeline.GetItemListInTrack("video", e.track) or []
+                by_track[e.track] = {it.GetStart(): it for it in items}
+            item = by_track[e.track].get(start + e.record_frame)
+            if item is None or not hasattr(item, "SetClipEnabled"):
+                continue
+            if item.SetClipEnabled(False):
+                done += 1
+        return done
+
     def build(self, plan: EditPlan, name: str) -> object:
         items = self.import_media({e.path for e in plan.events})
         timeline = self.media_pool.CreateEmptyTimeline(self._unique_name(name))
@@ -190,21 +216,28 @@ class ResolveBuilder:
         self.project.SetCurrentTimeline(timeline)
         start = timeline.GetStartFrame()
 
-        tracks = max((e.track for e in plan.events if e.media_type == 1), default=1)
-        while timeline.GetTrackCount("video") < tracks:
-            if not timeline.AddTrack("video"):
-                break
+        self._ensure_tracks(timeline, "video", max(
+            (e.track for e in plan.events if e.media_type == VIDEO_ONLY), default=1))
+        self._ensure_tracks(timeline, "audio", max(
+            (e.track for e in plan.events if e.media_type == AUDIO_ONLY), default=1))
 
-        events = sorted(plan.events, key=lambda e: (e.kind != "camera", e.record_frame))
+        events = sorted(plan.events, key=lambda e: (e.kind != "camera", e.track,
+                                                   e.record_frame))
         if events:
             self._calibrate(timeline, events[0], items[events[0].path], plan.fps, start)
 
         infos = [self._clip_info(e, items[e.path], plan.fps, start) for e in events]
         placed = 0
         for i in range(0, len(infos), 200):
-            result = self.media_pool.AppendToTimeline(infos[i:i + 200]) or []
-            placed += len(result)
+            placed += len(self.media_pool.AppendToTimeline(infos[i:i + 200]) or [])
         if placed < len(infos):
             self.log(f"Cảnh báo: chỉ đặt được {placed}/{len(infos)} clip lên timeline.")
+
+        hidden = [e for e in plan.events if not e.enabled]
+        if hidden:
+            done = self._disable(timeline, hidden, start)
+            if done < len(hidden):
+                self.log(f"Cảnh báo: chỉ tắt được {done}/{len(hidden)} đoạn góc máy "
+                         "không chọn (cần Resolve 18.5 trở lên).")
         self.log(f"Đã tạo timeline '{timeline.GetName()}' với {placed} clip.")
         return timeline

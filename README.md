@@ -1,12 +1,24 @@
 # AutoEdit cho DaVinci Resolve
 
-Tự động dựng video **trực tiếp thành timeline trong DaVinci Resolve**:
+Tự động dựng video **trực tiếp thành timeline trong DaVinci Resolve**, dành cho quay sự kiện, phỏng vấn, podcast nhiều máy:
 
-1. **Cắt khoảng lặng** – bỏ các đoạn im lặng, tạo jump cut gọn gàng.
-2. **Tự đảo góc máy** khi quay nhiều camera – tự đồng bộ các camera theo sóng âm rồi cắt qua lại giữa các góc.
-3. **Tự chèn B-roll** – rải B-roll đều theo nhịp, hoặc chèn đúng lúc người nói nhắc tới nội dung của clip (khớp từ khoá qua phụ đề `.srt`).
+1. **Đồng bộ nhiều camera**: mỗi camera là một thư mục gồm nhiều clip quay rải rác. Clip được xếp sơ bộ theo giờ quay (tên file DJI/điện thoại, metadata, timecode), rồi khớp chính xác theo sóng âm với Cam 1. App tự phát hiện đồng hồ các máy lệch nhau.
+2. **Cắt phần thừa**: bỏ khoảng lặng (khi mọi camera đều im) và các đoạn không máy nào quay.
+3. **Tự đảo góc máy**: theo nhịp, hoặc theo người đang nói.
+4. **Tự chèn B-roll**: rải đều, hoặc chèn đúng lúc người nói nhắc tới nội dung của clip.
 
-Kết quả là một timeline mới trong project đang mở: camera ở V1, B-roll ở V2, âm thanh chính liền mạch ở A1. Mọi thứ vẫn chỉnh sửa được bình thường trong Resolve.
+Timeline tạo ra:
+
+| Track | Nội dung |
+|---|---|
+| V1 + A1 | Cam 1 |
+| V2 + A2 | Cam 2 |
+| V3 + A3 … | Cam 3 … |
+| Track video trên cùng | B-roll |
+
+Mỗi camera nằm đủ trên track của mình. Ở mỗi thời điểm, góc máy được chọn là lớp trên cùng đang bật; các đoạn của camera ở track cao hơn bị **tắt (disable)** chứ không bị xoá. Muốn đổi góc, chọn đoạn đó và bấm **D** để bật lại. Nếu chọn chế độ đảo góc "Tắt", mọi track đều bật để bạn tự dựng.
+
+> Âm thanh của tất cả camera đều nằm trên timeline (A1, A2…). Thường bạn chỉ cần giữ track mic tốt nhất và tắt tiếng các track còn lại.
 
 ## Cài đặt
 
@@ -31,13 +43,18 @@ Lệnh trên thêm mục **AutoEdit** vào menu của Resolve. Khởi động l�
 
 ## Cách dùng (giao diện)
 
-1. **Nguồn**: thêm các file camera (camera 1 là góc chính, dùng làm âm thanh chính nếu không có âm thanh rời). Tuỳ chọn: file âm thanh mic rời, thư mục B-roll, file phụ đề `.srt`.
-2. **Cắt khoảng lặng**: ngưỡng dB (mặc định -35; phòng ồn thì tăng lên -30), độ dài lặng tối thiểu, khoảng đệm giữ lại trước/sau lời nói.
+1. **Nguồn**: bấm **Chọn thư mục...** cho Cam 1, Cam 2. Bấm **+ Thêm camera** nếu có thêm máy. Mỗi thư mục chứa toàn bộ clip của một máy (tìm cả trong thư mục con; bỏ qua thư mục Proxy). **Cam 1 là máy chuẩn**: nên chọn máy quay liên tục nhất và thu tiếng tốt nhất.
+2. **Cắt phần thừa**: bật/tắt cắt khoảng lặng, ngưỡng dB (mặc định -35; sự kiện ồn thì tăng lên -30 hoặc -25), độ dài lặng tối thiểu, khoảng đệm.
 3. **Đảo góc máy**:
-   - *Theo nhịp* – 1 người nói, nhiều góc (toàn + cận): đổi góc ở mỗi chỗ cắt lặng (che jump cut) và khi một shot quá dài.
-   - *Theo người nói* – podcast/phỏng vấn, mỗi người một camera có mic riêng: tự chuyển sang camera của người đang nói to nhất. Nếu có camera toàn cảnh, nhập số thứ tự để chuyển về toàn khi cả hai cùng nói hoặc shot quá dài.
+   - *Theo nhịp*: đổi góc ở mỗi chỗ cắt và khi một shot quá dài. Hợp với sự kiện, 1 người nói nhiều góc.
+   - *Theo người nói*: podcast/phỏng vấn, mỗi người một camera có mic riêng. Nhập số camera toàn cảnh nếu có.
+   - *Tắt*: chỉ xếp chồng các camera đã đồng bộ để bạn tự dựng.
 4. **B-roll**: bật/tắt, khoảng cách và độ dài mỗi đoạn.
-5. Bấm **Phân tích & tạo timeline**.
+5. Bấm **Phân tích & tạo timeline**. Log hiển thị từng bước: độ lệch đồng hồ giữa các máy, số clip khớp được, thời lượng trước/sau khi cắt.
+
+Nếu log báo `! ... không khớp được âm thanh`, clip đó được đặt theo giờ quay. Nguyên nhân thường là Cam 1 không quay đoạn đó, hoặc âm thanh quá khác nhau (máy ở xa, tắt mic).
+
+**Tăng tốc:** cài `pip install numpy` để đồng bộ nhanh hơn với sự kiện dài nhiều giờ. Không cài cũng chạy được.
 
 ### Đặt tên B-roll để tự khớp nội dung
 
@@ -54,11 +71,11 @@ Lệnh trên thêm mục **AutoEdit** vào menu của Resolve. Khởi động l�
 
 ```bash
 # Xem trước kế hoạch dựng, không cần mở Resolve
-python -m autoedit -c cam1.mp4 -c cam2.mp4 --broll-dir broll --dry-run
+python -m autoedit -c "E:/Su kien/Cam 1" -c "E:/Su kien/Cam 2" --broll-dir broll --dry-run
 
 # Tạo timeline trong Resolve Studio đang mở
-python -m autoedit -c cam1.mp4 -c cam2.mp4 -c wide.mp4 --mode speaker --wide-cam 3 \
-    --audio mic.wav --broll-dir broll --srt goc.srt --name "Podcast tập 1"
+python -m autoedit -c "Cam 1" -c "Cam 2" -c "Cam 3" --mode speaker --wide-cam 3 \
+    --broll-dir broll --name "Podcast tập 1"
 ```
 
 `python -m autoedit --help` để xem tất cả tuỳ chọn. Có thể lưu/đọc cài đặt bằng `--save-config` / `--config`.
@@ -67,9 +84,10 @@ python -m autoedit -c cam1.mp4 -c cam2.mp4 -c wide.mp4 --mode speaker --wide-cam
 
 | File | Việc |
 |---|---|
-| `autoedit/ffmpeg_tools.py` | Đọc thông tin media, dò khoảng lặng, đo âm lượng bằng ffmpeg |
-| `autoedit/silence.py` | Tính các đoạn giữ lại, ánh xạ thời gian gốc → timeline |
-| `autoedit/sync.py` | Đồng bộ camera theo sóng âm (thô 100 ms rồi tinh 10 ms) |
+| `autoedit/ffmpeg_tools.py` | Đọc thông tin media, giờ quay, đo âm lượng bằng ffmpeg |
+| `autoedit/sources.py` | Tìm clip trong thư mục camera, ước lượng giờ quay |
+| `autoedit/silence.py` | Tìm khoảng lặng, tính các đoạn giữ lại |
+| `autoedit/sync.py` | Đồng bộ mọi clip lên trục thời gian của Cam 1 (0,25 s → 50 ms → 10 ms) |
 | `autoedit/multicam.py` | Chọn góc máy theo nhịp hoặc theo người nói |
 | `autoedit/broll.py` | Khớp từ khoá (bỏ dấu tiếng Việt) và rải B-roll |
 | `autoedit/planner.py` | Kế hoạch dựng chính xác tới từng frame |
@@ -83,10 +101,12 @@ pip install pytest
 python -m pytest
 ```
 
-Bộ test tạo video mẫu bằng ffmpeg rồi chạy toàn bộ quy trình với một Resolve giả lập.
+Bộ test dựng một "sự kiện" mẫu bằng ffmpeg: 2 máy, mỗi máy 2 clip, đồng hồ Cam 2 lệch 37 giây. Sau đó test chạy toàn bộ quy trình với một Resolve giả lập.
 
 ## Giới hạn hiện tại
 
 - B-roll chỉ hỗ trợ file video (chưa hỗ trợ ảnh tĩnh).
 - Chế độ *theo người nói* cần mỗi camera thu được tiếng của người mình quay rõ hơn người kia.
 - Các camera nên cùng frame rate với timeline.
+- Clip chỉ có ở camera khác mà Cam 1 không quay cùng lúc sẽ được đặt theo giờ quay, không khớp được bằng âm thanh.
+- Tắt các đoạn góc máy không chọn cần Resolve 18.5 trở lên.
