@@ -13,7 +13,11 @@ Kết quả là một timeline mới trong project đang mở: camera ở V1, B-
 Yêu cầu:
 - DaVinci Resolve 18 trở lên (bản **Free** hoặc **Studio**).
 - Python 3.8+ (Resolve dùng Python cài trên máy để chạy script).
-- [ffmpeg](https://ffmpeg.org/download.html) có trong `PATH` (hoặc đặt biến môi trường `AUTOEDIT_FFMPEG_DIR` trỏ tới thư mục chứa `ffmpeg`/`ffprobe`).
+- **ffmpeg** (miễn phí). Trên Windows chọn 1 trong 2 cách:
+  - Tải bản *ffmpeg-release-essentials.zip* tại https://www.gyan.dev/ffmpeg/builds/, giải nén, đổi tên thư mục thành `ffmpeg` và đặt vào thư mục AutoEdit, sao cho có file `ffmpeg\bin\ffprobe.exe`. Không cần sửa PATH.
+  - Hoặc mở Command Prompt chạy `winget install Gyan.FFmpeg`, rồi **tắt hẳn và mở lại DaVinci Resolve**.
+
+  AutoEdit tự tìm ffmpeg ở các chỗ trên, trong `PATH`, hoặc ở thư mục ghi trong biến môi trường `AUTOEDIT_FFMPEG_DIR`.
 
 Không cần cài thêm thư viện Python nào.
 

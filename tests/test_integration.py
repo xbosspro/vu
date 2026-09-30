@@ -63,7 +63,9 @@ def test_pipeline_cuts_syncs_and_places_broll(media):
     assert {os.path.basename(e.path) for e in cams} == {"cam1.mp4", "cam2.mp4"}
     # camera 2 recorded 1.5 s earlier -> its source times are shifted by +1.5 s
     offs = [e for e in cams if e.path == str(cam2)]
-    assert any("+1.5" in l for l in logs), logs
+    synced = [float(l.split("lệch")[1].rstrip("s")) for l in logs if "lệch" in l]
+    # the volume gate in make_clip switches per 1024-sample audio frame (64 ms)
+    assert synced and abs(synced[0] - 1.5) < 0.07, logs
     assert sum(e.duration for e in cams) == plan.total_frames
     brolls = plan.by_kind("broll")
     assert any(os.path.basename(e.path) == "bien.mp4" for e in brolls)

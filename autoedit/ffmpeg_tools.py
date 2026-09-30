@@ -6,6 +6,7 @@ interpreter DaVinci Resolve launches for scripts.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -20,13 +21,29 @@ RMS_RE = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?inf|nan|-?[\d.]+)")
 
 FLOOR_DB = -120.0
 
-_EXTRA_DIRS = [
-    r"C:\ffmpeg\bin",
-    r"C:\Program Files\ffmpeg\bin",
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-]
+_REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _candidate_dirs() -> List[str]:
+    """Folders where ffmpeg is commonly installed (PATH is often stale in Resolve)."""
+    dirs = [os.path.join(_REPO_DIR, "ffmpeg", "bin"), os.path.join(_REPO_DIR, "ffmpeg")]
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA", "")
+        home = os.path.expanduser("~")
+        dirs += [
+            r"C:\ffmpeg\bin",
+            r"C:\Program Files\ffmpeg\bin",
+            os.path.join(local, "Microsoft", "WinGet", "Links"),
+            os.path.join(home, "scoop", "shims"),
+            r"C:\ProgramData\chocolatey\bin",
+        ]
+        # winget (Gyan.FFmpeg) unpacks into ...\Packages\Gyan.FFmpeg*\ffmpeg-*\bin
+        dirs += glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages",
+                                       "*FFmpeg*", "*", "bin"))
+        dirs += glob.glob(r"C:\ffmpeg*\bin") + glob.glob(r"C:\ffmpeg*\*\bin")
+    else:
+        dirs += ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+    return dirs
 
 
 class FFmpegError(RuntimeError):
@@ -42,13 +59,18 @@ def find_binary(name: str) -> str:
     found = shutil.which(name)
     if found:
         return found
-    for folder in _EXTRA_DIRS:
+    for folder in _candidate_dirs():
         candidate = os.path.join(folder, exe)
         if os.path.isfile(candidate):
             return candidate
     raise FFmpegError(
-        f"Không tìm thấy {name}. Hãy cài ffmpeg và thêm vào PATH "
-        f"hoặc đặt biến môi trường AUTOEDIT_FFMPEG_DIR."
+        f"Không tìm thấy {name}.\n\n"
+        f"Cách nhanh nhất: tải ffmpeg (bản 'release essentials' tại "
+        f"https://www.gyan.dev/ffmpeg/builds/), giải nén rồi đổi tên thư mục "
+        f"thành 'ffmpeg' và đặt vào:\n{_REPO_DIR}\n"
+        f"(sao cho có file {os.path.join(_REPO_DIR, 'ffmpeg', 'bin', exe)}).\n\n"
+        f"Hoặc mở Command Prompt chạy: winget install Gyan.FFmpeg "
+        f"rồi khởi động lại DaVinci Resolve."
     )
 
 
