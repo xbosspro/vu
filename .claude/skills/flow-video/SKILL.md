@@ -29,6 +29,10 @@ khi extension Claude in Chrome đang kết nối. Trước bước trình duyệ
 Từ câu lệnh, rút ra: nội dung cảnh, số cảnh, thời lượng, tỉ lệ, phong cách, có ảnh tham chiếu không.
 Chỉ hỏi lại khi thiếu thứ không thể đoán hợp lý (ví dụ sản phẩm cụ thể cần xuất hiện).
 
+Nếu lệnh nhắc tới "kịch bản đã duyệt" hoặc một file trong `flow-scripts/`, đọc file kịch bản tương ứng
+trong `flow-scripts/` (khớp theo tên/chủ đề) và dùng nguyên prompt, tỉ lệ, model trong đó; bỏ qua bước 2–3
+vì người dùng đã duyệt.
+
 ### 2. Viết prompt
 Flow cho kết quả tốt nhất với prompt **tiếng Anh**, cụ thể và có cấu trúc. Viết lại lệnh của
 người dùng theo `prompt-guide.md` trong thư mục skill này. Mỗi cảnh một prompt.
